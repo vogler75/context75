@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation & MCP Hub — Admin Control Panel</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Custom Styling -->
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="dark-mode">
+  <div class="app-container">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="logo-area">
+        <div class="logo-icon">
+          <i data-lucide="book-open"></i>
+        </div>
+        <div class="logo-text">
+          <span class="brand-title">DocuMCP</span>
+          <span class="brand-subtitle">Control Panel</span>
+        </div>
+      </div>
+
+      <nav class="nav-links">
+        <button class="nav-btn active" data-tab="overview">
+          <i data-lucide="layout-dashboard"></i>
+          <span>Overview</span>
+        </button>
+        <button class="nav-btn" data-tab="collections">
+          <i data-lucide="folder-git-2"></i>
+          <span>Collections</span>
+        </button>
+        <button class="nav-btn" data-tab="search">
+          <i data-lucide="sparkles"></i>
+          <span>Search Playground</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="server-status">
+          <div class="status-indicator online" id="health-indicator"></div>
+          <span class="status-text" id="health-text">Checking server...</span>
+        </div>
+        <div class="mcp-badge">
+          <i data-lucide="cpu"></i>
+          <span>MCP Active (Port 8010)</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Top Header -->
+      <header class="top-header">
+        <h1 id="page-title">Overview</h1>
+        <div class="header-actions">
+          <button class="btn btn-secondary" id="refresh-stats-btn">
+            <i data-lucide="refresh-cw"></i>
+            <span>Refresh Stats</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Tab: Overview -->
+      <section class="tab-content active" id="tab-overview">
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon purple">
+              <i data-lucide="folder-open"></i>
+            </div>
+            <div class="stat-details">
+              <span class="stat-label">Collections</span>
+              <h3 class="stat-val" id="stat-collections">0</h3>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon blue">
+              <i data-lucide="file-text"></i>
+            </div>
+            <div class="stat-details">
+              <span class="stat-label">Total Documents</span>
+              <h3 class="stat-val" id="stat-documents">0</h3>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon green">
+              <i data-lucide="database"></i>
+            </div>
+            <div class="stat-details">
+              <span class="stat-label">Indexed Chunks</span>
+              <h3 class="stat-val" id="stat-chunks">0</h3>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon amber">
+              <i data-lucide="hard-drive"></i>
+            </div>
+            <div class="stat-details">
+              <span class="stat-label">Raw Storage</span>
+              <h3 class="stat-val" id="stat-storage">0 KB</h3>
+            </div>
+          </div>
+        </div>
+
+        <!-- Info / Quick Action Panel -->
+        <div class="content-row">
+          <div class="info-card welcome-card">
+            <h2>Welcome to DocuMCP Server Hub!</h2>
+            <p>This admin panel allows you to upload, segment, and index document libraries (PDF and Markdown) directly into your local database. Once processed, you can query documents semantically or connect an external AI assistant (like Cursor or Claude Desktop) using the integrated Model Context Protocol (MCP) server endpoints.</p>
+            <div class="mcp-connect-box">
+              <h4>Active MCP Server Connection URI:</h4>
+              <code>http://localhost:8010/sse</code>
+              <button class="btn btn-icon btn-sm" id="copy-mcp-uri" title="Copy to clipboard">
+                <i data-lucide="copy"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="info-card stats-subcard">
+            <h3>System Environment</h3>
+            <ul class="env-list">
+              <li>
+                <span class="env-name">Node.js Version</span>
+                <span class="env-val" id="env-node">v20+</span>
+              </li>
+              <li>
+                <span class="env-name">Database</span>
+                <span class="env-val">PostgreSQL (linux5)</span>
+              </li>
+              <li>
+                <span class="env-name">Vector Ext</span>
+                <span class="env-val">Custom PL/pgSQL Similarity</span>
+              </li>
+              <li>
+                <span class="env-name">Local Embedder</span>
+                <span class="env-val">Xenova/all-MiniLM-L6-v2</span>
+              </li>
+              <li>
+                <span class="env-name">Memory RSS</span>
+                <span class="env-val" id="env-memory">0 MB</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab: Collections -->
+      <section class="tab-content" id="tab-collections">
+        <div class="collections-header-bar">
+          <h2>Your Libraries</h2>
+          <button class="btn btn-primary" id="open-create-modal-btn">
+            <i data-lucide="plus"></i>
+            <span>New Collection</span>
+          </button>
+        </div>
+
+        <!-- Grid of collections -->
+        <div class="collections-grid" id="collections-list">
+          <div class="loading-spinner">
+            <i data-lucide="loader-2" class="spin"></i>
+            <span>Loading collections...</span>
+          </div>
+        </div>
+
+        <!-- Detail Subview (hidden by default) -->
+        <div class="collection-detail-view hidden" id="collection-details">
+          <div class="detail-header">
+            <button class="btn-back" id="back-to-collections-btn">
+              <i data-lucide="arrow-left"></i> Back to Collections
+            </button>
+            <div class="detail-title-row">
+              <h2 id="detail-display-name">Collection Name</h2>
+              <span class="badge badge-slug" id="detail-slug">slug-name</span>
+            </div>
+            <p id="detail-description">Collection description.</p>
+          </div>
+
+          <!-- Tabs inside Details -->
+          <div class="detail-tabs">
+            <button class="detail-tab-btn active" data-detail-tab="docs">Documents</button>
+            <button class="detail-tab-btn" data-detail-tab="upload">Upload & Ingest</button>
+          </div>
+
+          <!-- Detail Panel: Documents List -->
+          <div class="detail-tab-content active" id="detail-tab-docs">
+            <div class="documents-table-container">
+              <table class="documents-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Size</th>
+                    <th>Chunks</th>
+                    <th>Indexed At</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="documents-table-body">
+                  <!-- JS populated -->
+                </tbody>
+              </table>
+              <div class="empty-state hidden" id="docs-empty-state">
+                <i data-lucide="file-warning"></i>
+                <p>No documents uploaded in this collection yet.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Detail Panel: Upload -->
+          <div class="detail-tab-content" id="detail-tab-upload">
+            <div class="upload-container">
+              <div class="upload-zone" id="drop-zone">
+                <i data-lucide="upload-cloud" class="upload-icon"></i>
+                <h3>Drag & drop your files here</h3>
+                <p>Supports Markdown (<code>.md</code>, <code>.mdx</code>) and PDF (<code>.pdf</code>)</p>
+                <span>or</span>
+                <input type="file" id="file-input" hidden accept=".md,.mdx,.pdf">
+                <button class="btn btn-secondary" onclick="document.getElementById('file-input').click()">Browse Files</button>
+              </div>
+
+              <!-- Upload configuration & trigger -->
+              <div class="upload-form hidden" id="upload-form">
+                <div class="form-group">
+                  <label for="upload-title">Document Title (Optional)</label>
+                  <input type="text" id="upload-title" placeholder="Defaults to filename">
+                </div>
+                <div class="selected-file-card">
+                  <i data-lucide="file" class="file-icon"></i>
+                  <div class="file-details">
+                    <span id="selected-file-name">filename.pdf</span>
+                    <span id="selected-file-size">0 KB</span>
+                  </div>
+                  <button class="btn-clear" id="cancel-upload-btn">
+                    <i data-lucide="x"></i>
+                  </button>
+                </div>
+
+                <!-- Process Ingestion Button -->
+                <button class="btn btn-primary btn-full" id="start-ingest-btn">
+                  <i data-lucide="bolt"></i>
+                  <span>Parse & Vectorize Document</span>
+                </button>
+
+                <!-- Processing feedback panel -->
+                <div class="ingest-progress-box hidden" id="ingest-progress-box">
+                  <div class="progress-bar-container">
+                    <div class="progress-bar-fill" id="ingest-progress-fill"></div>
+                  </div>
+                  <div class="progress-steps">
+                    <div class="step-indicator" id="step-upload">
+                      <span class="step-dot active"></span>
+                      <span class="step-name">Uploading</span>
+                    </div>
+                    <div class="step-indicator" id="step-parse">
+                      <span class="step-dot"></span>
+                      <span class="step-name">Parsing</span>
+                    </div>
+                    <div class="step-indicator" id="step-vector">
+                      <span class="step-dot"></span>
+                      <span class="step-name">Vectorizing</span>
+                    </div>
+                  </div>
+                  <div class="progress-status-text" id="ingest-status-text">Processing file... Please do not close this window.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab: Search Sandbox -->
+      <section class="tab-content" id="tab-search">
+        <div class="search-sandbox-card">
+          <h2>Semantic Vector Search Sandbox</h2>
+          <p>Query your vectorized database inside the database engine. Type a query and evaluate what text chunks and matching scores are returned.</p>
+
+          <form id="search-playground-form" class="search-config-form">
+            <div class="search-form-row">
+              <div class="form-group flex-2">
+                <label for="search-collection-select">Target Collection</label>
+                <select id="search-collection-select" required>
+                  <!-- Populated by JS -->
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="search-limit">Max Results</label>
+                <input type="number" id="search-limit" value="5" min="1" max="10">
+              </div>
+              <div class="form-group">
+                <label for="search-similarity">Min Similarity</label>
+                <input type="number" id="search-similarity" value="0.45" step="0.05" min="0" max="1">
+              </div>
+            </div>
+
+            <div class="search-input-row">
+              <input type="text" id="search-query-input" placeholder="Type something to query (e.g. 'how to load page layout data')" required>
+              <button type="submit" class="btn btn-primary" id="search-submit-btn">
+                <i data-lucide="search"></i>
+                <span>Search</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Search Results Panel -->
+        <div class="search-results-section hidden" id="search-results-panel">
+          <div class="results-header">
+            <h3>Search Results</h3>
+            <span class="badge" id="results-count">0 matches found</span>
+          </div>
+
+          <div class="results-container" id="results-list">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Create Collection Modal -->
+  <div class="modal-backdrop hidden" id="create-collection-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Create New Collection</h3>
+        <button class="btn-close-modal" id="close-create-modal-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <form id="create-collection-form">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="new-col-display-name">Collection Display Name</label>
+            <input type="text" id="new-col-display-name" placeholder="e.g. Next.js Developer Guides" required>
+          </div>
+          <div class="form-group">
+            <label for="new-col-name">Collection Slug Name</label>
+            <input type="text" id="new-col-name" placeholder="e.g. nextjs-docs" required pattern="^[a-z0-9-_]+$">
+            <span class="field-hint">Lower-case alphanumeric values and hyphens only. Used as URL parameter.</span>
+          </div>
+          <div class="form-group">
+            <label for="new-col-description">Description</label>
+            <textarea id="new-col-description" rows="3" placeholder="Provide a summary of the contents..."></textarea>
+          </div>
+          <div class="form-error hidden" id="create-col-error"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancel-create-modal-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Collection</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Document Chunks Preview Modal -->
+  <div class="modal-backdrop hidden" id="chunks-preview-modal">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <h3 id="chunks-modal-title">Chunks Explorer</h3>
+        <button class="btn-close-modal" id="close-chunks-modal-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="chunks-explorer-container">
+          <div class="loading-spinner" id="chunks-loading">
+            <i data-lucide="loader-2" class="spin"></i>
+            <span>Loading chunks and vector metadata...</span>
+          </div>
+          <div class="chunks-list hidden" id="chunks-list">
+            <!-- JS Populated -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Scripts -->
+  <script src="/app.js"></script>
+</body>
+</html>
