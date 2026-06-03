@@ -109,8 +109,8 @@ if (process.argv.includes('--stdio')) {
       // 1. Verify and initialize Database
       await initDb();
 
-      // 2. Start Listening
-      app.listen(PORT, () => {
+      // 2. Start Listening on all interfaces (0.0.0.0)
+      app.listen(Number(PORT), '0.0.0.0', () => {
         console.log(`
 ===========================================================
   DOCUMENTATION SEARCH PLATFORM - ACTIVE WITH INTEGRATED MCP
