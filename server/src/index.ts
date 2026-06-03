@@ -68,15 +68,13 @@ if (process.argv.includes('--stdio')) {
     const mcpTransports = new Map<string, SSEServerTransport>();
 
     app.get('/sse', async (req: express.Request, res: express.Response) => {
-      const sessionId = Math.random().toString(36).substring(2, 15);
-      
-      const transport = new SSEServerTransport(`/api/mcp/message?sessionId=${sessionId}`, res);
-      mcpTransports.set(sessionId, transport);
+      const transport = new SSEServerTransport('/api/mcp/message', res);
+      mcpTransports.set(transport.sessionId, transport);
       
       await mcpServer.connect(transport);
       
       req.on('close', () => {
-        mcpTransports.delete(sessionId);
+        mcpTransports.delete(transport.sessionId);
       });
     });
 
