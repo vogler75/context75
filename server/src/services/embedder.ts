@@ -9,7 +9,9 @@ export const getEmbedder = async () => {
     try {
       // Dynamic import to handle any CommonJS/ESM module issues with xenova/transformers
       const { pipeline } = await import('@xenova/transformers');
-      pipelineInstance = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2');
+      pipelineInstance = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
+        progress_callback: () => {} // Completely silent, prevents stdout stream pollution in MCP stdio mode
+      });
     } catch (error) {
       console.error("Failed to load local embedding model Xenova/all-MiniLM-L6-v2:", error);
       throw error;

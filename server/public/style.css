@@ -586,6 +586,11 @@ body {
   height: 14px;
 }
 
+.col-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .col-btn-delete {
   background: none;
   border: none;
@@ -599,6 +604,21 @@ body {
 .col-btn-delete:hover {
   color: var(--accent-red);
   background-color: rgba(239, 68, 68, 0.1);
+}
+
+.col-btn-edit {
+  background: none;
+  border: none;
+  color: var(--text-dark);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: all var(--transition-speed) ease;
+}
+
+.col-btn-edit:hover {
+  color: var(--accent-blue);
+  background-color: rgba(59, 130, 246, 0.1);
 }
 
 /* Collection Details View */

@@ -118,22 +118,42 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { displayName, description } = req.body;
+    const { name, displayName, description } = req.body;
 
-    if (!displayName) {
+    // Verify collection exists
+    const checkExist = await db.query('SELECT name, display_name, description FROM collections WHERE id = $1', [id]);
+    if (checkExist.rows.length === 0) {
+      return res.status(404).json({ error: "Collection not found" });
+    }
+    const current = checkExist.rows[0];
+
+    const targetName = name !== undefined ? name.trim() : current.name;
+    const targetDisplayName = displayName !== undefined ? displayName.trim() : current.display_name;
+    const targetDescription = description !== undefined ? description.trim() : current.description;
+
+    if (!targetDisplayName) {
       return res.status(400).json({ error: "Missing required field: 'displayName'" });
+    }
+
+    if (name) {
+      const slugRegex = /^[a-z0-9-_]+$/;
+      if (!slugRegex.test(targetName)) {
+        return res.status(400).json({ error: "Invalid 'name' format. Must be lower-case URL-friendly slug (e.g. nextjs-docs)" });
+      }
+
+      // Check conflict
+      const conflictCheck = await db.query('SELECT id FROM collections WHERE name = $1 AND id != $2', [targetName, id]);
+      if (conflictCheck.rows.length > 0) {
+        return res.status(409).json({ error: `Collection with name '${targetName}' already exists` });
+      }
     }
 
     const result = await db.query(`
       UPDATE collections
-      SET display_name = $1, description = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
+      SET name = $1, display_name = $2, description = $3, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $4
       RETURNING *
-    `, [displayName, description || "", id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: "Collection not found" });
-    }
+    `, [targetName, targetDisplayName, targetDescription || "", id]);
 
     // Fetch counts to keep payload shape consistent
     const counts = await db.query(`

@@ -1,7 +1,7 @@
 {
   "name": "documentation-server",
   "version": "1.0.0",
-  "description": "REST API and MCP server for document vector search and management",
+  "description": "Documentation search MCP server for semantic documentation lookup. Perform semantic vector search across specific collections to find relevant text fragments and retrieve document content directly into your LLM context.",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",

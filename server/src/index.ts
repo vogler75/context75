@@ -3,7 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import crypto from 'crypto';
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 // Load environment variables
 dotenv.config();
@@ -16,8 +17,10 @@ if (process.argv.includes('--stdio')) {
   const startMcpStdio = async () => {
     const { initDb } = await import('./db/index');
     const { startStdioMcp } = await import('./mcp/index');
+    const { getEmbedder } = await import('./services/embedder');
     try {
       await initDb();
+      await getEmbedder(); // Pre-warm the ONNX embedder model
       await startStdioMcp();
     } catch (err) {
       console.error("Critical failure initializing database for Stdio MCP server:", err);
@@ -29,7 +32,7 @@ if (process.argv.includes('--stdio')) {
   // Normal Web/REST mode
   const startApp = async () => {
     const { initDb } = await import('./db/index');
-    const { mcpServer } = await import('./mcp/index');
+    const { mcpServer, createMcpServer } = await import('./mcp/index');
     
     // Import routers
     const collectionsRouter = (await import('./routes/collections')).default;
@@ -64,30 +67,71 @@ if (process.argv.includes('--stdio')) {
     app.use('/api/search', searchRouter);
     app.use('/api', systemRouter);
 
-    // Register MCP SSE Server-Sent Events endpoints
-    const mcpTransports = new Map<string, SSEServerTransport>();
+    // Register MCP Streamable HTTP endpoints
+    interface McpSession {
+      transport: StreamableHTTPServerTransport;
+      server: any;
+    }
+    const mcpSessions = new Map<string, McpSession>();
 
-    app.get('/sse', async (req: express.Request, res: express.Response) => {
-      const transport = new SSEServerTransport('/api/mcp/message', res);
-      mcpTransports.set(transport.sessionId, transport);
-      
-      await mcpServer.connect(transport);
-      
-      req.on('close', () => {
-        mcpTransports.delete(transport.sessionId);
-      });
-    });
+    const handleMcpRequest = async (req: express.Request, res: express.Response) => {
+      const sessionId = req.headers['mcp-session-id'] as string;
+      let transport: StreamableHTTPServerTransport | undefined;
 
-    app.post('/api/mcp/message', async (req: express.Request, res: express.Response) => {
-      const sessionId = req.query.sessionId as string;
-      const transport = mcpTransports.get(sessionId);
-      
-      if (!transport) {
-        return res.status(400).send(`No active SSE session found for ID: ${sessionId}`);
+      if (sessionId) {
+        const session = mcpSessions.get(sessionId);
+        if (!session) {
+          res.status(404).json({
+            jsonrpc: '2.0',
+            error: {
+              code: -32001,
+              message: 'Session not found'
+            },
+            id: null
+          });
+          return;
+        }
+        transport = session.transport;
+      } else {
+        // Create a new server instance for this session connection
+        const sessionServer = createMcpServer();
+
+        // Create a new transport session for initialization
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => crypto.randomUUID(),
+          onsessioninitialized: (id) => {
+            if (transport) {
+              mcpSessions.set(id, { transport, server: sessionServer });
+            }
+          },
+          onsessionclosed: (id) => {
+            mcpSessions.delete(id);
+            sessionServer.close().catch((closeError: any) => {
+              console.error("Failed to close session server:", closeError);
+            });
+          }
+        });
+
+        try {
+          await sessionServer.connect(transport);
+        } catch (connectError: any) {
+          console.error("Failed to connect transport to session MCP server:", connectError);
+          res.status(500).send("Internal Server Error");
+          return;
+        }
       }
-      
-      await transport.handlePostMessage(req, res);
-    });
+
+      try {
+        await transport.handleRequest(req, res, req.body);
+      } catch (err) {
+        console.error("Error handling MCP Streamable HTTP request:", err);
+        if (!res.headersSent) {
+          res.status(500).send("Internal Server Error");
+        }
+      }
+    };
+
+    app.all('/api/mcp', handleMcpRequest);
 
     // Global Error Handler
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -107,6 +151,10 @@ if (process.argv.includes('--stdio')) {
       // 1. Verify and initialize Database
       await initDb();
 
+      // Pre-warm the local embedding model
+      const { getEmbedder } = await import('./services/embedder');
+      await getEmbedder();
+
       // 2. Start Listening on all interfaces (0.0.0.0)
       app.listen(Number(PORT), '0.0.0.0', () => {
         console.log(`
@@ -114,7 +162,7 @@ if (process.argv.includes('--stdio')) {
   DOCUMENTATION SEARCH PLATFORM - ACTIVE WITH INTEGRATED MCP
 ===========================================================
   REST Server is running on: http://localhost:${PORT}
-  MCP SSE Endpoint is open on: http://localhost:${PORT}/sse
+  MCP Endpoint is open on: http://localhost:${PORT}/api/mcp
   
   Available Endpoints:
   
@@ -140,8 +188,7 @@ if (process.argv.includes('--stdio')) {
   - POST http://localhost:${PORT}/api/search (JSON body)
   
   [MCP (MODEL CONTEXT PROTOCOL)]
-  - GET  http://localhost:${PORT}/sse (Connect Cursor/SSE client)
-  - POST http://localhost:${PORT}/api/mcp/message (SSE messaging channel)
+  - Streamable HTTP Endpoint: http://localhost:${PORT}/api/mcp
   - Standard command-line launch: node dist/index.js --stdio
 ===========================================================
         `);

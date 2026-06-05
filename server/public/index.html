@@ -118,7 +118,7 @@
             <p>This admin panel allows you to upload, segment, and index document libraries (PDF and Markdown) directly into your local database. Once processed, you can query documents semantically or connect an external AI assistant (like Cursor or Claude Desktop) using the integrated Model Context Protocol (MCP) server endpoints.</p>
             <div class="mcp-connect-box">
               <h4>Active MCP Server Connection URI:</h4>
-              <code>http://localhost:8010/sse</code>
+              <code>http://localhost:8010/api/mcp</code>
               <button class="btn btn-icon btn-sm" id="copy-mcp-uri" title="Copy to clipboard">
                 <i data-lucide="copy"></i>
               </button>
@@ -180,6 +180,9 @@
             <div class="detail-title-row">
               <h2 id="detail-display-name">Collection Name</h2>
               <span class="badge badge-slug" id="detail-slug">slug-name</span>
+              <button class="btn btn-icon btn-sm" id="edit-collection-details-btn" title="Edit collection details" style="margin-left: 10px;">
+                <i data-lucide="edit-3"></i>
+              </button>
             </div>
             <p id="detail-description">Collection description.</p>
           </div>
@@ -356,6 +359,41 @@
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" id="cancel-create-modal-btn">Cancel</button>
           <button type="submit" class="btn btn-primary">Create Collection</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Collection Modal -->
+  <div class="modal-backdrop hidden" id="edit-collection-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Edit Collection Details</h3>
+        <button class="btn-close-modal" id="close-edit-modal-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <form id="edit-collection-form">
+        <input type="hidden" id="edit-col-id">
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="edit-col-display-name">Collection Display Name</label>
+            <input type="text" id="edit-col-display-name" placeholder="e.g. Next.js Developer Guides" required>
+          </div>
+          <div class="form-group">
+            <label for="edit-col-name">Collection Slug Name</label>
+            <input type="text" id="edit-col-name" placeholder="e.g. nextjs-docs" required pattern="^[a-z0-9-_]+$">
+            <span class="field-hint">Lower-case alphanumeric values and hyphens only. Used as URL parameter.</span>
+          </div>
+          <div class="form-group">
+            <label for="edit-col-description">Description</label>
+            <textarea id="edit-col-description" rows="3" placeholder="Provide a summary of the contents..."></textarea>
+          </div>
+          <div class="form-error hidden" id="edit-col-error"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancel-edit-modal-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
         </div>
       </form>
     </div>

@@ -10,17 +10,19 @@ import * as db from "../db/index";
 import { generateEmbedding } from "../services/embedder";
 
 // Initialize the MCP Server
-export const mcpServer = new Server({
-  name: "documentation-mcp-server",
-  version: "1.0.0"
-}, {
-  capabilities: {
-    tools: {}
-  }
-});
+export const createMcpServer = () => {
+  const server = new Server({
+    name: "documentation-mcp-server",
+    version: "1.0.0"
+  }, {
+    capabilities: {
+      tools: {}
+    },
+    instructions: "Documentation search MCP server for semantic documentation lookup. Perform semantic vector search across specific collections to find relevant text fragments and retrieve document content directly into your LLM context."
+  });
 
-// Register ListTools request handler
-mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
+  // Register ListTools request handler
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
@@ -73,7 +75,7 @@ mcpServer.setRequestHandler(ListToolsRequestSchema, async () => {
 });
 
 // Register CallTool request handler
-mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   try {
@@ -203,7 +205,11 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
 
   } catch (error: any) {
-    console.error(`MCP Tool execution error [${name}]:`, error);
+    if (error instanceof McpError) {
+      console.warn(`MCP Tool execution warning [${name}]: McpError: MCP error ${error.code}: ${error.message}`);
+    } else {
+      console.error(`MCP Tool execution error [${name}]:`, error);
+    }
     return {
       content: [
         {
@@ -215,6 +221,11 @@ mcpServer.setRequestHandler(CallToolRequestSchema, async (request) => {
     };
   }
 });
+
+  return server;
+};
+
+export const mcpServer = createMcpServer();
 
 /**
  * Connect the MCP server to stdio transport (useful for IDE execution).

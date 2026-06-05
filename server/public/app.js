@@ -60,6 +60,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const createCollectionForm = document.getElementById('create-collection-form');
   const createColError = document.getElementById('create-col-error');
 
+  // Edit Modal elements
+  const editCollectionModal = document.getElementById('edit-collection-modal');
+  const editCollectionForm = document.getElementById('edit-collection-form');
+  const editColId = document.getElementById('edit-col-id');
+  const editColDisplayName = document.getElementById('edit-col-display-name');
+  const editColName = document.getElementById('edit-col-name');
+  const editColDescription = document.getElementById('edit-col-description');
+  const editColError = document.getElementById('edit-col-error');
+  const closeEditModalBtn = document.getElementById('close-edit-modal-btn');
+  const cancelEditModalBtn = document.getElementById('cancel-edit-modal-btn');
+  const editCollectionDetailsBtn = document.getElementById('edit-collection-details-btn');
+
   const chunksPreviewModal = document.getElementById('chunks-preview-modal');
   const closeChunksModalBtn = document.getElementById('close-chunks-modal-btn');
   const chunksModalTitle = document.getElementById('chunks-modal-title');
@@ -196,7 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Copy MCP URI Box
   copyMcpUriBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText('http://localhost:8010/sse');
+    navigator.clipboard.writeText('http://localhost:8010/api/mcp');
     
     // Change Icon to Checkmark
     copyMcpUriBtn.innerHTML = '<i data-lucide="check" style="color: var(--accent-green)"></i>';
@@ -261,14 +273,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 <i data-lucide="database"></i> ${col.chunkCount}
               </span>
             </div>
-            <button class="col-btn-delete" title="Delete collection" data-id="${col.id}">
-              <i data-lucide="trash-2"></i>
-            </button>
+            <div class="col-card-actions">
+              <button class="col-btn-edit" title="Edit collection" data-id="${col.id}">
+                <i data-lucide="edit-3"></i>
+              </button>
+              <button class="col-btn-delete" title="Delete collection" data-id="${col.id}">
+                <i data-lucide="trash-2"></i>
+              </button>
+            </div>
           </div>
         `;
 
         // Card Click opens details
         card.addEventListener('click', (e) => {
+          // If clicked the edit button, prevent opening card details
+          if (e.target.closest('.col-btn-edit')) {
+            e.stopPropagation();
+            const colId = e.target.closest('.col-btn-edit').dataset.id;
+            openEditModal(col);
+            return;
+          }
           // If clicked the delete button, prevent opening card
           if (e.target.closest('.col-btn-delete')) {
             e.stopPropagation();
@@ -348,6 +372,70 @@ document.addEventListener('DOMContentLoaded', () => {
       alert("Network error occurred.");
     }
   }
+
+  // Edit Collection logic
+  const openEditModal = (col) => {
+    editColId.value = col.id;
+    editColDisplayName.value = col.displayName;
+    editColName.value = col.name;
+    editColDescription.value = col.description || '';
+    editCollectionModal.classList.remove('hidden');
+    editColError.classList.add('hidden');
+  };
+
+  const closeEditModal = () => {
+    editCollectionModal.classList.add('hidden');
+    editCollectionForm.reset();
+  };
+
+  closeEditModalBtn.addEventListener('click', closeEditModal);
+  cancelEditModalBtn.addEventListener('click', closeEditModal);
+
+  editCollectionDetailsBtn.addEventListener('click', () => {
+    if (activeCollection) {
+      openEditModal(activeCollection);
+    }
+  });
+
+  editCollectionForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    editColError.classList.add('hidden');
+
+    const id = editColId.value;
+    const displayName = editColDisplayName.value.trim();
+    const name = editColName.value.trim().toLowerCase();
+    const description = editColDescription.value.trim();
+
+    try {
+      const response = await fetch(`/api/collections/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, displayName, description })
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        closeEditModal();
+        
+        // If we are currently looking at this collection's details, update the UI
+        if (activeCollection && activeCollection.id === id) {
+          activeCollection = result;
+          detailDisplayName.innerText = result.displayName;
+          detailSlug.innerText = result.name;
+          detailDescription.innerText = result.description || 'No description provided.';
+        }
+        
+        loadCollections();
+      } else {
+        editColError.innerText = result.error || "Failed to update collection.";
+        editColError.classList.remove('hidden');
+      }
+    } catch (err) {
+      editColError.innerText = "Network connection failed.";
+      editColError.classList.remove('hidden');
+    }
+  });
 
   /* ==========================================
      Collection Details & Document Explorer
