@@ -194,7 +194,7 @@ if (process.argv.includes('--stdio')) {
         `);
       });
     } catch (error) {
-      console.error("Critical startup failure: Failed to connect or initialize PostgreSQL database context9.", error);
+      console.error("Critical startup failure: Failed to connect or initialize PostgreSQL database context75.", error);
       process.exit(1);
     }
   };
