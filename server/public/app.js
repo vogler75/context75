@@ -1,3 +1,82 @@
+// Intercept all fetch requests to automatically add X-API-Token header
+const originalFetch = window.fetch;
+let isPrompting = false;
+let promptPromise = null;
+
+async function promptForToken() {
+  if (isPrompting) {
+    return promptPromise;
+  }
+  
+  isPrompting = true;
+  promptPromise = new Promise((resolve) => {
+    setTimeout(() => {
+      const currentToken = localStorage.getItem('docu_mcp_api_token') || '';
+      const newToken = prompt("This Doc server requires authentication. Please enter your API Token:", currentToken);
+      if (newToken !== null && newToken.trim() !== '') {
+        localStorage.setItem('docu_mcp_api_token', newToken.trim());
+        resolve(newToken.trim());
+      } else {
+        resolve(null);
+      }
+      isPrompting = false;
+      promptPromise = null;
+    }, 50);
+  });
+  
+  return promptPromise;
+}
+
+window.fetch = async function (input, init) {
+  const token = localStorage.getItem('docu_mcp_api_token');
+  if (token) {
+    init = init || {};
+    init.headers = init.headers || {};
+    if (init.headers instanceof Headers) {
+      init.headers.set('X-API-Token', token);
+    } else if (Array.isArray(init.headers)) {
+      const index = init.headers.findIndex(h => h[0].toLowerCase() === 'x-api-token');
+      if (index > -1) {
+        init.headers[index][1] = token;
+      } else {
+        init.headers.push(['X-API-Token', token]);
+      }
+    } else {
+      init.headers['X-API-Token'] = token;
+    }
+  }
+  
+  const response = await originalFetch(input, init);
+  
+  // If unauthorized, prompt for token and retry (except for health checks)
+  if (response.status === 401 && !input.toString().endsWith('/health')) {
+    const tokenBeforePrompt = localStorage.getItem('docu_mcp_api_token') || '';
+    const newToken = await promptForToken();
+    const currentStoredToken = localStorage.getItem('docu_mcp_api_token') || '';
+    
+    // If the token changed (entered by this prompt or a parallel one), retry
+    if (currentStoredToken && currentStoredToken !== tokenBeforePrompt) {
+      init = init || {};
+      init.headers = init.headers || {};
+      if (init.headers instanceof Headers) {
+        init.headers.set('X-API-Token', currentStoredToken);
+      } else if (Array.isArray(init.headers)) {
+        const index = init.headers.findIndex(h => h[0].toLowerCase() === 'x-api-token');
+        if (index > -1) {
+          init.headers[index][1] = currentStoredToken;
+        } else {
+          init.headers.push(['X-API-Token', currentStoredToken]);
+        }
+      } else {
+        init.headers['X-API-Token'] = currentStoredToken;
+      }
+      return originalFetch(input, init);
+    }
+  }
+  
+  return response;
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   // Navigation elements
   const navButtons = document.querySelectorAll('.nav-btn');
@@ -94,6 +173,35 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize lucide icons at load
   lucide.createIcons();
+
+  // Handle API token setup button
+  const setTokenBtn = document.getElementById('set-token-btn');
+  if (setTokenBtn) {
+    setTokenBtn.addEventListener('click', () => {
+      const currentToken = localStorage.getItem('docu_mcp_api_token') || '';
+      const newToken = prompt("Enter API Authentication Token (leave blank to clear):", currentToken);
+      if (newToken !== null) {
+        if (newToken.trim() === '') {
+          localStorage.removeItem('docu_mcp_api_token');
+          alert("API Token cleared.");
+        } else {
+          localStorage.setItem('docu_mcp_api_token', newToken.trim());
+          alert("API Token saved!");
+        }
+        location.reload();
+      }
+    });
+  }
+
+  // Dynamically populate server port and MCP URI based on the current location
+  const mcpConnectionUri = document.getElementById('mcp-connection-uri');
+  const mcpBadgeText = document.getElementById('mcp-badge-text');
+  if (mcpConnectionUri) {
+    mcpConnectionUri.innerText = `${window.location.origin}/api/mcp`;
+  }
+  if (mcpBadgeText) {
+    mcpBadgeText.innerText = `MCP Active (Port ${window.location.port || '80'})`;
+  }
 
   /* ==========================================
      Tab Navigation Controller
@@ -208,7 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Copy MCP URI Box
   copyMcpUriBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText('http://localhost:8010/api/mcp');
+    navigator.clipboard.writeText(`${window.location.origin}/api/mcp`);
     
     // Change Icon to Checkmark
     copyMcpUriBtn.innerHTML = '<i data-lucide="check" style="color: var(--accent-green)"></i>';
@@ -638,6 +746,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `/api/collections/${activeCollection.id}/upload`, true);
 
+    const token = localStorage.getItem('docu_mcp_api_token');
+    if (token) {
+      xhr.setRequestHeader('X-API-Token', token);
+    }
+
     // Track upload progress
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
@@ -647,7 +760,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const scaledProgress = Math.round(percentComplete * 0.5);
         ingestProgressFill.style.width = `${scaledProgress}%`;
         ingestStatusText.innerText = `Uploading document contents... (${percentComplete}%)`;
-
+ 
         if (percentComplete === 100) {
           setStepState(stepUpload, 'completed');
           setStepState(stepParse, 'active');
@@ -673,8 +786,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1500);
 
       } else {
-        const errorData = JSON.parse(xhr.responseText || '{}');
-        handleIngestError(errorData.error || "Failed to process document.");
+        let errMsg = "Failed to process document.";
+        try {
+          const errorData = JSON.parse(xhr.responseText || '{}');
+          errMsg = errorData.error || errorData.message || errMsg;
+        } catch (e) {}
+
+        if (xhr.status === 401) {
+          const newToken = prompt("Upload failed: Unauthorized (401). Please enter a valid API Token:");
+          if (newToken) {
+            localStorage.setItem('docu_mcp_api_token', newToken.trim());
+            alert("Token updated. Please try your upload again.");
+          }
+        }
+        handleIngestError(errMsg);
       }
     };
 

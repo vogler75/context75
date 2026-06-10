@@ -50,7 +50,11 @@
         </div>
         <div class="mcp-badge">
           <i data-lucide="cpu"></i>
-          <span>MCP Active (Port 8010)</span>
+          <span id="mcp-badge-text">MCP Active (Port 8010)</span>
+        </div>
+        <div class="token-config" style="display: flex; align-items: center; justify-content: space-between; background-color: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-glass); padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; margin-top: 4px;">
+          <span style="color: var(--text-muted); display: flex; align-items: center; gap: 6px;"><i data-lucide="key" style="width: 14px; height: 14px;"></i> API Auth</span>
+          <button class="btn btn-sm btn-secondary" id="set-token-btn" style="padding: 2px 8px; font-size: 0.75rem;">Set Token</button>
         </div>
       </div>
     </aside>
@@ -118,7 +122,7 @@
             <p>This admin panel allows you to upload, segment, and index document libraries (PDF and Markdown) directly into your local database. Once processed, you can query documents semantically or connect an external AI assistant (like Cursor or Claude Desktop) using the integrated Model Context Protocol (MCP) server endpoints.</p>
             <div class="mcp-connect-box">
               <h4>Active MCP Server Connection URI:</h4>
-              <code>http://localhost:8010/api/mcp</code>
+              <code id="mcp-connection-uri">http://localhost:8010/api/mcp</code>
               <button class="btn btn-icon btn-sm" id="copy-mcp-uri" title="Copy to clipboard">
                 <i data-lucide="copy"></i>
               </button>

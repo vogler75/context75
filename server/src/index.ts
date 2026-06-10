@@ -61,6 +61,40 @@ if (process.argv.includes('--stdio')) {
     const publicDir = path.join(__dirname, '../public');
     app.use(express.static(publicDir));
 
+    // Authentication Middleware
+    const authMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      // Bypass health check
+      if (req.path.endsWith('/health') || req.path.endsWith('/health/')) {
+        return next();
+      }
+
+      // Check if it's an MCP connection request
+      const isMcpPath = req.path === '/mcp' || req.path === '/mcp/' || req.path.endsWith('/mcp') || req.path.endsWith('/mcp/');
+      const token = isMcpPath ? process.env.MCP_TOKEN : process.env.API_TOKEN;
+
+      if (!token) {
+        return next();
+      }
+
+      let reqToken = req.headers['authorization'] as string | undefined;
+      if (reqToken && reqToken.startsWith('Bearer ')) {
+        reqToken = reqToken.slice(7).trim();
+      } else {
+        reqToken = (req.headers['x-api-token'] as string) || (req.query.token as string) || (req.query.apiKey as string);
+      }
+
+      if (reqToken === token) {
+        return next();
+      }
+
+      res.status(401).json({
+        error: 'Unauthorized',
+        message: `Invalid or missing ${isMcpPath ? 'MCP' : 'API'} Token.`
+      });
+    };
+
+    app.use('/api', authMiddleware);
+
     // Register REST routers
     app.use('/api/collections', collectionsRouter);
     app.use('/api', documentsRouter);
