@@ -1,2 +1,2 @@
 #!/bin/bash
-npm run dev --prefix server
+NODE_ENV=production npm start --prefix server
