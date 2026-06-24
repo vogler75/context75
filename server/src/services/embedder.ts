@@ -7,8 +7,8 @@ let pipelineInstance: any = null;
 export const getEmbedder = async () => {
   if (!pipelineInstance) {
     try {
-      // Dynamic import to handle any CommonJS/ESM module issues with xenova/transformers
-      const { pipeline } = await import('@xenova/transformers');
+      // Use a dynamic import constructor to bypass TypeScript's CommonJS require() transpilation
+      const { pipeline } = await (new Function('return import("@xenova/transformers")')() as any);
       pipelineInstance = await pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', {
         progress_callback: () => {} // Completely silent, prevents stdout stream pollution in MCP stdio mode
       });
