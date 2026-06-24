@@ -1,13 +1,10 @@
+import './config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-
-// Load environment variables
-dotenv.config();
 
 // Standard command-line flag check for running MCP in stdio mode (e.g. for Claude Desktop)
 if (process.argv.includes('--stdio')) {
