@@ -191,11 +191,12 @@ router.post('/collections/:collectionId/upload', upload.single('file'), async (r
       for (let i = 0; i < allChunks.length; i++) {
         const chunk = allChunks[i];
         const embedding = embeddings[i];
+        const embeddingStr = `[${embedding.join(',')}]`;
 
         await pgClient.query(`
           INSERT INTO document_chunks (document_id, chunk_index, content, embedding, metadata)
           VALUES ($1, $2, $3, $4, $5)
-        `, [insertedDoc.id, chunk.chunkIndex, chunk.content, embedding, JSON.stringify(chunk.metadata)]);
+        `, [insertedDoc.id, chunk.chunkIndex, chunk.content, embeddingStr, JSON.stringify(chunk.metadata)]);
       }
 
       await pgClient.query('COMMIT');
@@ -241,8 +242,13 @@ router.get('/documents/:id/chunks', async (req: Request, res: Response) => {
     `, [id]);
 
     const formattedChunks = chunksResult.rows.map(row => {
-      // Map vector array floats to a string summary
-      const emb = row.embedding || [];
+      // Map vector array representation to a string summary
+      let emb: number[] = [];
+      if (typeof row.embedding === 'string') {
+        emb = row.embedding.replace(/[\[\]]/g, '').split(',').map(Number);
+      } else if (Array.isArray(row.embedding)) {
+        emb = row.embedding;
+      }
       const embSnippet = `[${emb.slice(0, 5).join(', ')}, ... ${emb.length} total dimensions]`;
       
       return {

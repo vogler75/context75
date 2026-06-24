@@ -31,19 +31,19 @@ router.post('/', async (req: Request, res: Response) => {
     // 2. Generate embedding for query text (using Xenova/all-MiniLM-L6-v2)
     const queryEmbedding = await generateEmbedding(query);
 
-    // 3. Query PostgreSQL using custom cosine_similarity PL/pgSQL function
-    // Note: cosine_similarity is formatted: float similarity = cosine_similarity(embedding_a, embedding_b)
+    // 3. Query PostgreSQL using native pgvector cosine distance operator
+    // Note: ch.embedding <=> $1 calculates cosine distance; we subtract it from 1 to get similarity
     const searchResult = await db.query(`
       SELECT ch.id as "chunkId",
              ch.content,
              ch.metadata,
              d.id as "documentId",
              d.title as "documentTitle",
-             cosine_similarity(ch.embedding, $1) as similarity
+             1 - (ch.embedding <=> $1::vector) as similarity
       FROM document_chunks ch
       JOIN documents d ON d.id = ch.document_id
       WHERE d.collection_id = $2
-        AND cosine_similarity(ch.embedding, $1) >= $3
+        AND (1 - (ch.embedding <=> $1::vector)) >= $3
       ORDER BY similarity DESC
       LIMIT $4
     `, [queryEmbedding, resolvedCollectionId, minSimilarity, limit]);

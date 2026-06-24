@@ -32,33 +32,10 @@ export const getClient = () => {
 export const initDb = async () => {
   const client = await pool.connect();
   try {
-    // 1. Drop old real[] signature if it exists to avoid overloading conflicts
-    await client.query(`DROP FUNCTION IF EXISTS cosine_similarity(real[], real[]);`);
+    // 1. Ensure the pgvector extension is enabled
+    await client.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
 
-    // 2. Ensure the stable double precision cosine_similarity helper function exists
-    await client.query(`
-      CREATE OR REPLACE FUNCTION cosine_similarity(a double precision[], b double precision[]) 
-      RETURNS double precision AS $$
-      DECLARE
-          dot_product double precision := 0;
-          norm_a double precision := 0;
-          norm_b double precision := 0;
-          i integer;
-      BEGIN
-          FOR i IN 1..array_length(a, 1) LOOP
-              dot_product := dot_product + (a[i] * b[i]);
-              norm_a := norm_a + (a[i] * a[i]);
-              norm_b := norm_b + (b[i] * b[i]);
-          END LOOP;
-          IF norm_a = 0 OR norm_b = 0 THEN
-              RETURN 0;
-          END IF;
-          RETURN dot_product / (sqrt(norm_a) * sqrt(norm_b));
-      END;
-      $$ LANGUAGE plpgsql IMMUTABLE;
-    `);
-
-    // 2. Ensure schema tables exist (as fallback)
+    // 2. Ensure schema tables exist
     await client.query(`
       CREATE TABLE IF NOT EXISTS collections (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -90,13 +67,19 @@ export const initDb = async () => {
           document_id UUID REFERENCES documents(id) ON DELETE CASCADE NOT NULL,
           chunk_index INT NOT NULL,
           content TEXT NOT NULL,
-          embedding real[] NOT NULL,
+          embedding VECTOR(384) NOT NULL,
           metadata JSONB,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    console.log("Database tables and custom cosine_similarity functions successfully verified.");
+    // 3. Create HNSW index for fast approximate cosine distance queries
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS document_chunks_embedding_hnsw_idx 
+      ON document_chunks USING hnsw (embedding vector_cosine_ops);
+    `);
+
+    console.log("Database tables and vector extensions successfully verified.");
   } catch (error) {
     console.error("Failed to initialize database schemas:", error);
     throw error;
