@@ -30,6 +30,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // 2. Generate embedding for query text (using Xenova/all-MiniLM-L6-v2)
     const queryEmbedding = await generateEmbedding(query);
+    const queryEmbeddingStr = `[${queryEmbedding.join(',')}]`;
 
     // 3. Query PostgreSQL using native pgvector cosine distance operator
     // Note: ch.embedding <=> $1 calculates cosine distance; we subtract it from 1 to get similarity
@@ -46,7 +47,7 @@ router.post('/', async (req: Request, res: Response) => {
         AND (1 - (ch.embedding <=> $1::vector)) >= $3
       ORDER BY similarity DESC
       LIMIT $4
-    `, [queryEmbedding, resolvedCollectionId, minSimilarity, limit]);
+    `, [queryEmbeddingStr, resolvedCollectionId, minSimilarity, limit]);
 
     res.json({
       query,

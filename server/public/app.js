@@ -127,9 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const ingestProgressBox = document.getElementById('ingest-progress-box');
   const ingestProgressFill = document.getElementById('ingest-progress-fill');
   const ingestStatusText = document.getElementById('ingest-status-text');
-  const stepUpload = document.getElementById('step-upload');
-  const stepParse = document.getElementById('step-parse');
-  const stepVector = document.getElementById('step-vector');
 
   // Modals elements
   const createCollectionModal = document.getElementById('create-collection-modal');
@@ -570,18 +567,27 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   async function loadDocuments(collectionId) {
-    documentsTableBody.innerHTML = `
-      <tr>
-        <td colspan="6" style="text-align: center">
-          <div class="loading-spinner">
-            <i data-lucide="loader-2" class="spin"></i>
-            <span>Loading documents...</span>
-          </div>
-        </td>
-      </tr>
-    `;
-    lucide.createIcons();
-    docsEmptyState.classList.add('hidden');
+    if (window.docLoadTimeout) {
+      clearTimeout(window.docLoadTimeout);
+      window.docLoadTimeout = null;
+    }
+
+    // If table is completely empty (no rows at all, or has a loading spinner), show loading spinner first
+    const isInitialLoad = !documentsTableBody.querySelector('tr[data-doc-id]');
+    if (isInitialLoad) {
+      documentsTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align: center">
+            <div class="loading-spinner">
+              <i data-lucide="loader-2" class="spin"></i>
+              <span>Loading documents...</span>
+            </div>
+          </td>
+        </tr>
+      `;
+      lucide.createIcons();
+      docsEmptyState.classList.add('hidden');
+    }
 
     try {
       const response = await fetch(`/api/collections/${collectionId}/documents`);
@@ -593,10 +599,26 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      documentsTableBody.innerHTML = '';
-      documents.forEach(doc => {
-        const tr = document.createElement('tr');
-        
+      docsEmptyState.classList.add('hidden');
+
+      // Clear the loading spinner row if it's currently present
+      const loadingRow = documentsTableBody.querySelector('tr td .loading-spinner');
+      if (loadingRow) {
+        documentsTableBody.innerHTML = '';
+      }
+
+      // 1. Remove rows for deleted documents
+      const newDocIds = new Set(documents.map(d => d.id));
+      const existingRows = Array.from(documentsTableBody.querySelectorAll('tr[data-doc-id]'));
+      existingRows.forEach(row => {
+        const rowDocId = row.getAttribute('data-doc-id');
+        if (!newDocIds.has(rowDocId)) {
+          row.remove();
+        }
+      });
+
+      // 2. Add or update rows in place
+      documents.forEach((doc, index) => {
         // Format size
         const sizeStr = doc.fileSizeBytes > 1024 * 1024 
           ? `${(doc.fileSizeBytes / 1024 / 1024).toFixed(1)} MB` 
@@ -604,44 +626,112 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const dateStr = new Date(doc.createdAt).toLocaleString();
 
-        tr.innerHTML = `
-          <td class="doc-title-cell">
-            <i data-lucide="file"></i>
-            <span>${doc.title}</span>
-          </td>
-          <td>
-            <span class="badge-type ${doc.fileType}">${doc.fileType.toUpperCase()}</span>
-          </td>
-          <td>${sizeStr}</td>
-          <td>${doc.chunkCount}</td>
-          <td>${dateStr}</td>
-          <td>
-            <div class="doc-action-group">
-              <button class="btn-table-action view-chunks" title="Explore vector chunks" data-id="${doc.id}" data-title="${doc.title}">
-                <i data-lucide="eye"></i>
-              </button>
-              <button class="btn-table-action delete delete-doc" title="Delete document" data-id="${doc.id}" data-title="${doc.title}">
-                <i data-lucide="trash-2"></i>
-              </button>
-            </div>
-          </td>
-        `;
+        let chunksDisplay = `${doc.chunkCount}`;
+        if (doc.status === 'pending') {
+          chunksDisplay = `<span class="status-badge status-pending" title="${doc.statusMessage || 'Pending initialization'}" style="background: rgba(255, 193, 7, 0.15); color: #d39e00; padding: 3px 6px; border-radius: 4px; font-size: 0.85em; font-weight: 600; display: inline-block;">Pending</span>`;
+        } else if (doc.status === 'processing') {
+          chunksDisplay = `<span class="status-badge status-processing" title="${doc.statusMessage || 'Vectorizing...'}" style="background: rgba(0, 123, 255, 0.15); color: #0056b3; padding: 3px 6px; border-radius: 4px; font-size: 0.85em; font-weight: 600; display: inline-block;">Indexing: ${doc.progressPercent}%</span>`;
+        } else if (doc.status === 'failed') {
+          chunksDisplay = `<span class="status-badge status-failed" title="${doc.statusMessage || 'Failed to index'}" style="background: rgba(220, 53, 69, 0.15); color: #bd2130; padding: 3px 6px; border-radius: 4px; font-size: 0.85em; font-weight: 600; display: inline-block;">Failed</span>`;
+        }
 
-        // Details handlers
-        tr.querySelector('.view-chunks').addEventListener('click', () => {
-          openChunksPreview(doc.id, doc.title);
-        });
+        const isCompleted = doc.status === 'completed';
+        const existingRow = documentsTableBody.querySelector(`tr[data-doc-id="${doc.id}"]`);
 
-        tr.querySelector('.delete-doc').addEventListener('click', () => {
-          deleteDocument(doc.id, doc.title);
-        });
+        if (existingRow) {
+          // Title cell status tooltip
+          const titleSpan = existingRow.querySelector('.doc-title-cell span');
+          if (titleSpan && titleSpan.getAttribute('title') !== (doc.statusMessage || '')) {
+            titleSpan.setAttribute('title', doc.statusMessage || '');
+            titleSpan.innerText = doc.title; // Update in case parsed title was populated after upload
+          }
 
-        documentsTableBody.appendChild(tr);
+          // Chunks Column (4th td, index 3)
+          const chunksTd = existingRow.querySelectorAll('td')[3];
+          if (chunksTd && chunksTd.innerHTML !== chunksDisplay) {
+            chunksTd.innerHTML = chunksDisplay;
+          }
+
+          // Enable/disable Explore vector chunks button
+          const viewBtn = existingRow.querySelector('.view-chunks');
+          if (viewBtn) {
+            const currentlyDisabled = viewBtn.hasAttribute('disabled');
+            if (isCompleted && currentlyDisabled) {
+              viewBtn.removeAttribute('disabled');
+              viewBtn.removeAttribute('style');
+              // Re-bind click handler since it was disabled
+              viewBtn.addEventListener('click', () => {
+                openChunksPreview(doc.id, doc.title);
+              });
+            } else if (!isCompleted && !currentlyDisabled) {
+              viewBtn.setAttribute('disabled', 'true');
+              viewBtn.setAttribute('style', 'opacity: 0.4; cursor: not-allowed;');
+            }
+          }
+        } else {
+          // Insert new row
+          const tr = document.createElement('tr');
+          tr.setAttribute('data-doc-id', doc.id);
+          
+          tr.innerHTML = `
+            <td class="doc-title-cell">
+              <i data-lucide="file"></i>
+              <span title="${doc.statusMessage || ''}">${doc.title}</span>
+            </td>
+            <td>
+              <span class="badge-type ${doc.fileType}">${doc.fileType.toUpperCase()}</span>
+            </td>
+            <td>${sizeStr}</td>
+            <td>${chunksDisplay}</td>
+            <td>${dateStr}</td>
+            <td>
+              <div class="doc-action-group">
+                <button class="btn-table-action view-chunks" title="Explore vector chunks" data-id="${doc.id}" data-title="${doc.title}" ${!isCompleted ? 'disabled style="opacity: 0.4; cursor: not-allowed;"' : ''}>
+                  <i data-lucide="eye"></i>
+                </button>
+                <button class="btn-table-action delete delete-doc" title="Delete document" data-id="${doc.id}" data-title="${doc.title}">
+                  <i data-lucide="trash-2"></i>
+                </button>
+              </div>
+            </td>
+          `;
+
+          // Click handlers
+          if (isCompleted) {
+            tr.querySelector('.view-chunks').addEventListener('click', () => {
+              openChunksPreview(doc.id, doc.title);
+            });
+          }
+
+          tr.querySelector('.delete-doc').addEventListener('click', () => {
+            deleteDocument(doc.id, doc.title);
+          });
+
+          // Insert at correct index (stable ordering matching documents array)
+          const referenceNode = documentsTableBody.children[index];
+          if (referenceNode) {
+            documentsTableBody.insertBefore(tr, referenceNode);
+          } else {
+            documentsTableBody.appendChild(tr);
+          }
+        }
       });
 
       lucide.createIcons();
+
+      // Poll if any document is still pending or processing
+      const hasActiveJobs = documents.some(doc => doc.status === 'pending' || doc.status === 'processing');
+      if (hasActiveJobs) {
+        window.docLoadTimeout = setTimeout(() => {
+          if (activeCollection && activeCollection.id === collectionId) {
+            loadDocuments(collectionId);
+          }
+        }, 2000);
+      }
     } catch (err) {
-      documentsTableBody.innerHTML = `<tr><td colspan="6" style="color: var(--accent-red); text-align: center">Failed to connect to API to fetch documents.</td></tr>`;
+      if (isInitialLoad) {
+        documentsTableBody.innerHTML = `<tr><td colspan="6" style="color: var(--accent-red); text-align: center">Failed to connect to API to fetch documents.</td></tr>`;
+      }
     }
   }
 
@@ -734,10 +824,6 @@ document.addEventListener('DOMContentLoaded', () => {
     ingestProgressFill.style.width = '0%';
     ingestStatusText.innerText = "Initializing file transfer...";
 
-    // Configure steps
-    resetSteps();
-    setStepState(stepUpload, 'active');
-
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('title', uploadTitleInput.value.trim());
@@ -746,7 +832,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `/api/collections/${activeCollection.id}/upload`, true);
 
-    const token = localStorage.getItem('docu_mcp_api_token');
+    const token = localStorage.getItem('docu_mcv_api_token') || localStorage.getItem('docu_mcp_api_token');
     if (token) {
       xhr.setRequestHeader('X-API-Token', token);
     }
@@ -756,33 +842,28 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.lengthComputable) {
         const percentComplete = Math.round((e.loaded / e.total) * 100);
         
-        // Progress caps at 50% for raw uploading, leaving the rest for parsing and vectorization steps
-        const scaledProgress = Math.round(percentComplete * 0.5);
-        ingestProgressFill.style.width = `${scaledProgress}%`;
+        // Progress tracks raw upload (0-100%)
+        ingestProgressFill.style.width = `${percentComplete}%`;
         ingestStatusText.innerText = `Uploading document contents... (${percentComplete}%)`;
  
         if (percentComplete === 100) {
-          setStepState(stepUpload, 'completed');
-          setStepState(stepParse, 'active');
-          ingestStatusText.innerText = "Parsing contents and extracting pages...";
-          ingestProgressFill.style.width = '65%';
+          ingestStatusText.innerText = "Upload complete! Handing off to background indexer...";
         }
       }
     };
 
     xhr.onload = () => {
-      if (xhr.status === 201) {
-        // Completed Vectorization successfully
-        setStepState(stepParse, 'completed');
-        setStepState(stepVector, 'completed');
+      if (xhr.status === 201 || xhr.status === 202) {
         ingestProgressFill.style.width = '100%';
-        ingestStatusText.innerText = "Parsing, chunking, and embedding vectors saved successfully!";
+        ingestStatusText.innerText = "Document uploaded successfully! Indexing in background...";
 
         setTimeout(() => {
-          // Reset file card and load documents
-          alert("File successfully vectorized!");
+          alert("Document uploaded successfully! Its contents are being vectorized and indexed in the background.");
           cancelUploadBtn.click();
           detailTabBtns[0].click(); // Back to docs view
+          if (activeCollection) {
+            loadDocuments(activeCollection.id);
+          }
         }, 1500);
 
       } else {
@@ -807,36 +888,13 @@ document.addEventListener('DOMContentLoaded', () => {
       handleIngestError("Network transfer interrupted.");
     };
 
-    // Trigger mock states for parser/vectorizer since backend processes it synchronously
-    setTimeout(() => {
-      if (xhr.readyState > 0 && xhr.readyState < 4) {
-        ingestProgressFill.style.width = '80%';
-        setStepState(stepParse, 'completed');
-        setStepState(stepVector, 'active');
-        ingestStatusText.innerText = "Generating local ONNX text embeddings and saving vectors...";
-      }
-    }, 3000);
-
     xhr.send(formData);
   });
-
-  function resetSteps() {
-    [stepUpload, stepParse, stepVector].forEach(step => {
-      const dot = step.querySelector('.step-dot');
-      dot.className = 'step-dot';
-    });
-  }
-
-  function setStepState(stepElement, state) {
-    const dot = stepElement.querySelector('.step-dot');
-    dot.className = `step-dot ${state}`;
-  }
 
   function handleIngestError(msg) {
     alert(`Ingestion Error: ${msg}`);
     startIngestBtn.disabled = false;
     ingestProgressBox.classList.add('hidden');
-    resetSteps();
   }
 
   /* ==========================================

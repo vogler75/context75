@@ -54,10 +54,22 @@ export const initDb = async () => {
           file_type VARCHAR(10) NOT NULL,
           raw_content TEXT,
           checksum VARCHAR(64),
+          status VARCHAR(20) DEFAULT 'pending',
+          status_message TEXT,
+          progress_percent INT DEFAULT 0,
+          total_chunks INT DEFAULT 0,
+          processed_chunks INT DEFAULT 0,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // Migration fallback for existing tables
+    await client.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'pending';`);
+    await client.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS status_message TEXT;`);
+    await client.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS progress_percent INT DEFAULT 0;`);
+    await client.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS total_chunks INT DEFAULT 0;`);
+    await client.query(`ALTER TABLE documents ADD COLUMN IF NOT EXISTS processed_chunks INT DEFAULT 0;`);
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS document_chunks (

@@ -133,6 +133,7 @@ export const createMcpServer = () => {
 
           // Generate embedding for query text (local all-MiniLM-L6-v2 ONNX)
           const queryEmbedding = await generateEmbedding(query);
+          const queryEmbeddingStr = `[${queryEmbedding.join(',')}]`;
 
           // Perform cosine similarity database query using native pgvector <=> operator
           const searchResult = await db.query(`
@@ -146,7 +147,7 @@ export const createMcpServer = () => {
               AND (1 - (ch.embedding <=> $1::vector)) >= $3
             ORDER BY similarity DESC
             LIMIT $4
-          `, [queryEmbedding, collectionId, minSimilarity, Math.min(10, Number(limit))]);
+          `, [queryEmbeddingStr, collectionId, minSimilarity, Math.min(10, Number(limit))]);
 
           if (searchResult.rows.length === 0) {
             response = {

@@ -19,6 +19,11 @@ const mapDocument = (row: any) => ({
   fileSizeBytes: parseInt(row.file_size_bytes || '0'),
   chunkCount: parseInt(row.chunkCount || '0'),
   checksum: row.checksum,
+  status: row.status || 'pending',
+  statusMessage: row.status_message || '',
+  progressPercent: parseInt(row.progress_percent || '0'),
+  totalChunks: parseInt(row.total_chunks || '0'),
+  processedChunks: parseInt(row.processed_chunks || '0'),
   createdAt: row.created_at,
   updatedAt: row.updated_at
 });
@@ -106,8 +111,96 @@ router.delete('/documents/:id', async (req: Request, res: Response) => {
 });
 
 /**
+ * Helper to process document parsing and vectorization in the background.
+ */
+const runBackgroundVectorization = async (docId: string, filePath: string, ext: string) => {
+  try {
+    // 1. Update status to parsing
+    await db.query(`
+      UPDATE documents 
+      SET status = 'processing', status_message = 'Parsing and extracting text content...'
+      WHERE id = $1
+    `, [docId]);
+
+    const parsedDoc = await parseDocument(filePath, ext);
+    
+    // Update raw content and use parsed title if available
+    await db.query(`
+      UPDATE documents 
+      SET raw_content = $1, title = COALESCE(NULLIF($2, ''), title), status_message = 'Segmenting text into chunks...'
+      WHERE id = $3
+    `, [parsedDoc.rawContent, parsedDoc.title || '', docId]);
+
+    // 2. Chunker
+    const allChunks: { content: string; chunkIndex: number; metadata: any }[] = [];
+    for (const page of parsedDoc.pages) {
+      const pageChunks = chunkText(page.content, 800, 150, page.pageNumber, page.headerPath);
+      allChunks.push(...pageChunks);
+    }
+
+    if (allChunks.length === 0) {
+      throw new Error("No readable text content extracted from document.");
+    }
+
+    // Update total chunks count
+    await db.query(`
+      UPDATE documents 
+      SET total_chunks = $1, status_message = 'Generating vector embeddings...'
+      WHERE id = $2
+    `, [allChunks.length, docId]);
+
+    // 3. Process, embed, and insert chunks sequentially
+    for (let i = 0; i < allChunks.length; i++) {
+      const chunk = allChunks[i];
+      const embedding = await generateEmbedding(chunk.content);
+      const embeddingStr = `[${embedding.join(',')}]`;
+
+      await db.query(`
+        INSERT INTO document_chunks (document_id, chunk_index, content, embedding, metadata)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [docId, chunk.chunkIndex, chunk.content, embeddingStr, JSON.stringify(chunk.metadata)]);
+
+      const processed = i + 1;
+      const progress = Math.round((processed / allChunks.length) * 100);
+
+      await db.query(`
+        UPDATE documents 
+        SET processed_chunks = $1, progress_percent = $2, status_message = $3
+        WHERE id = $4
+      `, [processed, progress, `Vectorized chunk ${processed}/${allChunks.length} (${progress}%)`, docId]);
+    }
+
+    // 4. Set final completed status
+    await db.query(`
+      UPDATE documents 
+      SET status = 'completed', status_message = 'Completed successfully.', progress_percent = 100
+      WHERE id = $1
+    `, [docId]);
+
+  } catch (error: any) {
+    console.error(`Background vectorization error for document ${docId}:`, error);
+
+    // Update DB status to failed
+    await db.query(`
+      UPDATE documents 
+      SET status = 'failed', status_message = $1, progress_percent = 0
+      WHERE id = $2
+    `, [error.message || 'Unknown processing error', docId]);
+
+    // Cleanup local file on failure
+    if (fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (err) {
+        console.error("Cleanup of failed file failed:", err);
+      }
+    }
+  }
+};
+
+/**
  * POST /api/collections/:collectionId/upload
- * Upload and vectorize a file (Markdown or PDF) in a PostgreSQL transaction.
+ * Upload a file (Markdown or PDF) and trigger background vectorization.
  */
 router.post('/collections/:collectionId/upload', upload.single('file'), async (req: Request, res: Response) => {
   const { collectionId } = req.params;
@@ -120,7 +213,6 @@ router.post('/collections/:collectionId/upload', upload.single('file'), async (r
 
   const fileExtension = file.originalname.split('.').pop()?.toLowerCase();
   if (fileExtension !== 'md' && fileExtension !== 'pdf' && fileExtension !== 'mdx') {
-    // Delete temp file if invalid type
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
     return res.status(400).json({ error: "Unsupported file type. Only Markdown (.md, .mdx) and PDF (.pdf) files are supported." });
   }
@@ -143,7 +235,6 @@ router.post('/collections/:collectionId/upload', upload.single('file'), async (r
       [collectionId, checksum]
     );
     if (duplicateResult.rows.length > 0) {
-      // Remove temp file (we won't double-vectorize it)
       fs.unlinkSync(file.path);
       return res.status(409).json({
         error: "Duplicate file detected. This exact document has already been vectorized in this collection.",
@@ -152,72 +243,32 @@ router.post('/collections/:collectionId/upload', upload.single('file'), async (r
       });
     }
 
-    // 1. Parse File
-    const parsedDoc = await parseDocument(file.path, fileExtension);
-    const docTitle = title || parsedDoc.title || file.originalname.replace(/\.[^/.]+$/, "");
+    const docTitle = title || file.originalname.replace(/\.[^/.]+$/, "");
 
-    // 2. Extract and segment text into chunks
-    const allChunks: { content: string; chunkIndex: number; metadata: any }[] = [];
-    for (const page of parsedDoc.pages) {
-      const pageChunks = chunkText(page.content, 800, 150, page.pageNumber, page.headerPath);
-      allChunks.push(...pageChunks);
-    }
+    // Save initial document record as pending
+    const docInsertResult = await db.query(`
+      INSERT INTO documents (collection_id, title, file_path, file_type, checksum, status, status_message, progress_percent)
+      VALUES ($1, $2, $3, $4, $5, 'pending', 'Initializing vectorization task...', 0)
+      RETURNING *
+    `, [collectionId, docTitle, file.path, fileExtension, checksum]);
 
-    if (allChunks.length === 0) {
-      throw new Error("No readable text content extracted from document.");
-    }
+    const insertedDoc = docInsertResult.rows[0];
 
-    // 3. Generate Vector Embeddings (Node-native Transformers)
-    const embeddings: number[][] = [];
-    for (const chunk of allChunks) {
-      const embedding = await generateEmbedding(chunk.content);
-      embeddings.push(embedding);
-    }
+    // Trigger background thread worker loop without awaiting it
+    runBackgroundVectorization(insertedDoc.id, file.path, fileExtension).catch(err => {
+      console.error(`Unhandled crash inside background vectorization loop for document ${insertedDoc.id}:`, err);
+    });
 
-    // 4. Save to Database within a transaction
-    const pgClient = await db.getClient();
-    try {
-      await pgClient.query('BEGIN');
-
-      const docInsertResult = await pgClient.query(`
-        INSERT INTO documents (collection_id, title, file_path, file_type, raw_content, checksum)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *
-      `, [collectionId, docTitle, file.path, fileExtension, parsedDoc.rawContent, checksum]);
-
-      const insertedDoc = docInsertResult.rows[0];
-
-      // Bulk-insert vector chunks
-      for (let i = 0; i < allChunks.length; i++) {
-        const chunk = allChunks[i];
-        const embedding = embeddings[i];
-        const embeddingStr = `[${embedding.join(',')}]`;
-
-        await pgClient.query(`
-          INSERT INTO document_chunks (document_id, chunk_index, content, embedding, metadata)
-          VALUES ($1, $2, $3, $4, $5)
-        `, [insertedDoc.id, chunk.chunkIndex, chunk.content, embeddingStr, JSON.stringify(chunk.metadata)]);
-      }
-
-      await pgClient.query('COMMIT');
-
-      res.status(201).json({
-        message: "File successfully uploaded and vectorized.",
-        document: mapDocument({ ...insertedDoc, chunkCount: allChunks.length })
-      });
-
-    } catch (transactionError) {
-      await pgClient.query('ROLLBACK');
-      throw transactionError;
-    } finally {
-      pgClient.release();
-    }
+    // Return the response immediately with 202 Accepted status code
+    res.status(202).json({
+      message: "File successfully uploaded. Vectorization is processing in the background.",
+      document: mapDocument({ ...insertedDoc, chunkCount: 0 })
+    });
 
   } catch (error: any) {
-    // Delete uploaded temp file on error
     if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    console.error("Vectorization error:", error);
-    res.status(500).json({ error: "Failed to parse and vectorize file", details: error.message });
+    console.error("Upload routing initialization error:", error);
+    res.status(500).json({ error: "Failed to initialize document upload", details: error.message });
   }
 });
 

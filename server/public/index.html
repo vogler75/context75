@@ -253,28 +253,14 @@
 
                 <!-- Process Ingestion Button -->
                 <button class="btn btn-primary btn-full" id="start-ingest-btn">
-                  <i data-lucide="bolt"></i>
-                  <span>Parse & Vectorize Document</span>
+                  <i data-lucide="upload-cloud"></i>
+                  <span>Upload & Index Document</span>
                 </button>
 
                 <!-- Processing feedback panel -->
                 <div class="ingest-progress-box hidden" id="ingest-progress-box">
                   <div class="progress-bar-container">
                     <div class="progress-bar-fill" id="ingest-progress-fill"></div>
-                  </div>
-                  <div class="progress-steps">
-                    <div class="step-indicator" id="step-upload">
-                      <span class="step-dot active"></span>
-                      <span class="step-name">Uploading</span>
-                    </div>
-                    <div class="step-indicator" id="step-parse">
-                      <span class="step-dot"></span>
-                      <span class="step-name">Parsing</span>
-                    </div>
-                    <div class="step-indicator" id="step-vector">
-                      <span class="step-dot"></span>
-                      <span class="step-name">Vectorizing</span>
-                    </div>
                   </div>
                   <div class="progress-status-text" id="ingest-status-text">Processing file... Please do not close this window.</div>
                 </div>
