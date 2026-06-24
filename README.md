@@ -36,13 +36,20 @@ npm install
 
 ### Environment Setup
 
-Create a `.env` file in the `server` directory:
+Create a `.env` file in the project root directory:
 
 ```env
-DATABASE_URL=postgresql://user:password@localhost:5432/context75
-MCP_SERVER_PORT=8011
-API_SERVER_PORT=8010
-NODE_ENV=development
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=system
+DB_PASSWORD=manager
+DB_NAME=context75
+PORT=8010
+
+# Simple API Authentication Token (leave blank to disable)
+API_TOKEN=
+# Simple MCP Authentication Token (leave blank to disable)
+MCP_TOKEN=
 ```
 
 ### Running the Server
@@ -134,13 +141,12 @@ npx tsc --noEmit
 
 ## Database
 
-The server uses PostgreSQL with the pgvector extension for vector operations. Create the database schema by running initialization queries from `src/db/`.
+The server uses PostgreSQL with the `pgvector` extension for vector operations. The database schema and HNSW index are automatically verified and created when starting the server.
 
 Key tables:
 - `collections` - Documentation groups
 - `documents` - Files within collections
-- `vector_chunks` - Text segments with embeddings
-- `embeddings` - Vector data with cosine similarity indexing
+- `document_chunks` - Text segments containing chunk content, metadata, and the `VECTOR(384)` embedding column.
 
 ## License
 
